@@ -1,1 +1,1 @@
-# Computer-Vision-Studying-Grooming-Exchange-Strategies-in-Sooty-Mangabeys-Using-DeepLabCut
+# Computer-Vision-Studying-Grooming-Exchange-Strategies-in-Primates-Using-DeepLabCut
