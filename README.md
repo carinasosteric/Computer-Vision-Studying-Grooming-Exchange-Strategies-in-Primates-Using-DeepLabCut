@@ -29,7 +29,7 @@ Video ──► 2. YOLO detection + ByteTrack tracking → track stitching → A
         10. Video quality control → batch inference on the full dataset
 
 ## Methodology
-0. Pose estimation (DeepLabCut)
+### 0. Pose estimation (DeepLabCut)
 
 Keypoints are extracted with DeepLabCut's pretrained SuperAnimal model in multi-animal mode. This needs no species-specific keypoint labelling. Ten keypoints are tracked per animal:
 
@@ -41,7 +41,7 @@ DeepLabCut outputs one .h5 file per video, holding x/y coordinates and a likelih
 
 DeepLabCut's own animal labels aren't stable from frame to frame, especially when animals overlap. That is why the pipeline adds its own detection and tracking stage (step 2) to give each animal a consistent identity.
 
-1. Detector training without manual box labels
+### 1. Detector training without manual box labels
 
 No bounding boxes were hand-annotated. Training labels for the detector are generated automatically from pose-estimation keypoints:
 
@@ -54,7 +54,8 @@ Keypoint spread: keypoints must not be scattered relative to the box size.
 Selection. A weighted quality score combines these checks with keypoint likelihood and count. Only frames with at least two good-quality animals are kept, and the two best boxes per frame are used.
 Training. YOLOv8n is fine-tuned on these labels (80/20 train/val split) with augmentation for lighting, scale, rotation and occlusion. Results are checked visually by rendering boxes onto sample frames and videos.
 
-2. Tracking and identity assignment
+### 2. Tracking and identity assignment
+
 Detection and tracking. The trained detector runs on every frame. Small boxes are filtered out, and ByteTrack links detections into short tracks.
 Track stitching. ByteTrack fragments tracks during occlusion and close contact, which is exactly when grooming happens. Fragments are stitched into longer identity chains by linking each track to the best successor that starts shortly after it ends. The cost combines spatial distance and time gap, and a box-size constraint prevents linking animals of different sizes.
 Pair selection. The video is split into ~5 s windows. In each window, every pair of chains is scored on co-detection rate and centroid proximity, and the best pair is taken as the interacting dyad.
@@ -62,56 +63,77 @@ A/B labelling. The two animals are labelled A and B by horizontal position in th
 
 A and B are consistent within a video. They do not identify specific individuals across videos.
 
-3. Keypoint assignment and smoothing
+### 3. Keypoint assignment and smoothing
+
 Assignment to A and B. Pose estimation can label the same animal differently from frame to frame. To fix this, each animal's keypoints are assigned to box A or B by how many fall inside each box, falling back to the nearest box centroid. If two keypoint sets claim the same box, the one with higher mean likelihood wins.
 Gap filling. Short gaps (≤ 10 frames) are linearly interpolated. Interpolated points keep a likelihood of 0, so later stages know they are estimates.
 Smoothing. A per-keypoint constant-velocity Kalman filter smooths each trajectory. Its measurement noise scales inversely with the pose-estimation likelihood, so confident detections pull the estimate more strongly.
 
-4. Training labels
+### 4. Training labels
 
 Manual annotations give the start, end, groomer and recipient for each bout. These are expanded into one label per frame: A_gr_B, B_gr_A or no_grooming.
 
-5. Feature engineering
+### 5. Feature engineering
 
 Features are computed for every frame:
 
-Group	Features
-Inter-animal distance	Each paw of one animal to the other's nose, neck, back and tail base; centroid distance; minimum paw-to-body distance per direction
-Confidence	Likelihood product for each distance pair; mean keypoint likelihood per animal; A/B likelihood ratio
-Motion	Paw, nose and body velocity per animal; relative body velocity
+Inter-animal distance:	Each paw of one animal to the other's nose, neck, back and tail base; centroid distance; minimum paw-to-body distance per direction
+
+Confidence:	Likelihood product for each distance pair; mean keypoint likelihood per animal; A/B likelihood ratio
+
+Motion:	Paw, nose and body velocity per animal; relative body velocity
+
 Orientation	Facing angle between animals; body axis angle per animal; body angle difference
-Detection flags	Whether A, B, both or neither were genuinely detected rather than interpolated
-Temporal context	Rolling mean and standard deviation over short (0.2 s) and long (1 s) centred windows
+
+Detection flags:	Whether A, B, both or neither were genuinely detected rather than interpolated
+
+Temporal context:	Rolling mean and standard deviation over short (0.2 s) and long (1 s) centred windows
+
 
 The direction-specific paw-to-body features (A→B vs B→A) are what let the classifier tell who is grooming whom.
 
-6. Classification
-Model. A Random Forest (1,000 trees, balanced class weights, min_samples_leaf=20) inside a scikit-learn Pipeline with median imputation.
-Validation. Group K-fold cross-validation grouped by video, so frames from one video never appear in both train and test folds. Because neighbouring frames are highly correlated, this avoids the inflated scores a random frame-level split would give. Imputation is fitted within each fold to prevent leakage.
-Outputs. A classification report, confusion matrix and feature importances.
+### 6. Classification
 
-7. Post-processing into bouts
+Model. A Random Forest (1,000 trees, balanced class weights, min_samples_leaf=20) inside a scikit-learn Pipeline with median imputation.
+
+Validation: Group K-fold cross-validation grouped by video, so frames from one video never appear in both train and test folds. Because neighbouring frames are highly correlated, this avoids the inflated scores a random frame-level split would give. Imputation is fitted within each fold to prevent leakage.
+
+Outputs: A classification report, confusion matrix and feature importances.
+
+### 7. Post-processing into bouts
 
 Frame-level predictions are noisy, so they are turned into bouts in stages:
 
 Direction smoothing: a rolling mean of each direction's probability over 10 frames.
+
 Thresholding: a frame counts as grooming if P(grooming) > 0.6.
+
 Short-bout removal: bouts under 1 s are dropped.
+
 Gap merging:
+
 Gaps under 0.5 s are merged regardless of direction (signal dropout).
+
 Gaps under 2 s are merged between same-direction bouts. A later pass extends this to 5 s.
+
 Isolated-bout removal: short bouts (< 3 s) more than 30 s after the previous bout are dropped as likely false positives.
+
 
 Each bout records its mean probabilities and a direction confidence, defined as |P(A→B) − P(B→A)|.
 
-Bout-level evaluation
+
+Bout-level evaluation:
 
 Predicted bouts are compared against annotated bouts. A true bout counts as detected if a predicted bout overlaps at least 50% of it. Three metrics are reported:
 
 Bout count accuracy: per video
+
 Duration error: absolute and percentage, for matched bouts
+
 Direction accuracy: for matched bouts
+
 8–12. Inference on the full dataset
+
 
 The trained detector and classifier run on the full video set using the same tracking, assignment and feature steps.
 
