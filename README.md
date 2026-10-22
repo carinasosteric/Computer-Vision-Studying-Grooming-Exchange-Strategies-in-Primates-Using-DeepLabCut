@@ -4,29 +4,21 @@ An end-to-end computer vision pipeline that detects grooming bouts between pairs
 The pipeline takes raw video and pose-estimation output and produces a CSV of predicted bouts per video, with start and end times, duration, direction and confidence. It is designed to replace or support manual behavioural coding of long video datasets.
 
 ## Pipeline overview
-Video ──► 0. DeepLabCut SuperAnimal pose estimation (multi-animal keypoints, .h5)
-            │
-            ├─► 1. Self-supervised YOLO training (boxes generated from keypoints)
-            │
-Video ──► 2. YOLO detection + ByteTrack tracking → track stitching → A/B identity timelines
-            │
-            ▼
-         3. Keypoint-to-identity assignment → interpolation → Kalman smoothing
-            │
-            ▼
-         4. Frame-level labels from manual bout annotations   (training only)
-            │
-            ▼
-         5. Feature extraction (distances, velocities, orientation, confidence, rolling stats)
-            │
-            ▼
-         6. Random Forest classifier: A_gr_B / B_gr_A / no_grooming
-            │
-            ▼
-         7. Post-processing → bout extraction → bout-level evaluation
-            │
-            ▼
-        10. Video quality control → batch inference on the full dataset
+```mermaid
+flowchart TD
+    V["Video"] --> DLC["0. Pose estimation<br/>DeepLabCut SuperAnimal (.h5 keypoints)"]
+    DLC --> YT["1. Detector training<br/>YOLO boxes generated from keypoints"]
+    V --> TR["2. Detection and tracking<br/>YOLO + ByteTrack, track stitching, A/B identities"]
+    YT --> TR
+    TR --> KP["3. Keypoint assignment<br/>A/B matching, interpolation, Kalman smoothing"]
+    DLC --> KP
+    KP --> QC["Quality control<br/>(full dataset only)"]
+    QC --> FE["5. Feature extraction<br/>distances, velocities, orientation, rolling stats"]
+    AN["4. Manual bout annotations<br/>(training only)"] --> RF
+    FE --> RF["6. Random Forest<br/>A_gr_B / B_gr_A / no_grooming"]
+    RF --> PP["7. Post-processing<br/>frame predictions to bouts"]
+    PP --> OUT["Predicted bouts per video"]
+```
 
 ## Methodology
 ### 0. Pose estimation (DeepLabCut)
