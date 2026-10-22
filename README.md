@@ -1,4 +1,4 @@
-# Computer-Vision-Studying-Grooming-Exchange-Strategies-in-Primates-Using-DeepLabCut
+# Computer-Vision-Model-Automated-Grooming-Detection-in-Primates
 An end-to-end computer vision pipeline that detects grooming bouts between pairs of animals in video, including who grooms whom. It combines markerless pose estimation, object detection and multi-object tracking, engineered behavioural features, and a frame-level classifier. Rule-based post-processing then turns the frame-level predictions into discrete bouts.
 
 The pipeline takes raw video and pose-estimation output and produces a CSV of predicted bouts per video, with start and end times, duration, direction and confidence. It is designed to replace or support manual behavioural coding of long video datasets.
