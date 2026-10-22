@@ -33,9 +33,13 @@ Video ──► 2. YOLO detection + ByteTrack tracking → track stitching → A
 
 Keypoints are extracted with DeepLabCut's pretrained SuperAnimal model in multi-animal mode. This needs no species-specific keypoint labelling. Ten keypoints are tracked per animal:
 
+
 Head: nose, both mouth corners, both ear bases
+
 Body: neck base, mid-back, tail base
+
 Forelimbs: both front paws
+
 
 DeepLabCut outputs one .h5 file per video, holding x/y coordinates and a likelihood for each keypoint. The rest of the pipeline uses these files for three things: training the detector, assigning keypoints to the two animals, and computing behavioural features.
 
@@ -45,29 +49,42 @@ DeepLabCut's own animal labels aren't stable from frame to frame, especially whe
 
 No bounding boxes were hand-annotated. Training labels for the detector are generated automatically from pose-estimation keypoints:
 
-Box generation. For each animal in each frame, a padded box is built around its keypoints. Frames are sampled at a fixed stride.
-Quality filtering. Each candidate box passes plausibility checks that reject keypoints split across overlapping animals:
+Box generation: For each animal in each frame, a padded box is built around its keypoints. Frames are sampled at a fixed stride.
+
+Quality filtering: Each candidate box passes plausibility checks that reject keypoints split across overlapping animals:
+
 Head coherence: head keypoints must form a tight cluster.
+
 Spine linearity: neck, mid-back and tail base must be roughly collinear.
+
 Size and aspect ratio: limits reject implausible boxes and small detections such as juveniles.
+
 Keypoint spread: keypoints must not be scattered relative to the box size.
-Selection. A weighted quality score combines these checks with keypoint likelihood and count. Only frames with at least two good-quality animals are kept, and the two best boxes per frame are used.
-Training. YOLOv8n is fine-tuned on these labels (80/20 train/val split) with augmentation for lighting, scale, rotation and occlusion. Results are checked visually by rendering boxes onto sample frames and videos.
+
+
+Selection: A weighted quality score combines these checks with keypoint likelihood and count. Only frames with at least two good-quality animals are kept, and the two best boxes per frame are used.
+Training: YOLOv8n is fine-tuned on these labels (80/20 train/val split) with augmentation for lighting, scale, rotation and occlusion. Results are checked visually by rendering boxes onto sample frames and videos.
 
 ### 2. Tracking and identity assignment
 
-Detection and tracking. The trained detector runs on every frame. Small boxes are filtered out, and ByteTrack links detections into short tracks.
-Track stitching. ByteTrack fragments tracks during occlusion and close contact, which is exactly when grooming happens. Fragments are stitched into longer identity chains by linking each track to the best successor that starts shortly after it ends. The cost combines spatial distance and time gap, and a box-size constraint prevents linking animals of different sizes.
-Pair selection. The video is split into ~5 s windows. In each window, every pair of chains is scored on co-detection rate and centroid proximity, and the best pair is taken as the interacting dyad.
-A/B labelling. The two animals are labelled A and B by horizontal position in the first window. Labels then carry over between windows using chain identity, which avoids swaps when animals cross. Short gaps are filled by linear interpolation of box coordinates.
+Detection and tracking: The trained detector runs on every frame. Small boxes are filtered out, and ByteTrack links detections into short tracks.
+
+Track stitching: ByteTrack fragments tracks during occlusion and close contact, which is exactly when grooming happens. Fragments are stitched into longer identity chains by linking each track to the best successor that starts shortly after it ends. The cost combines spatial distance and time gap, and a box-size constraint prevents linking animals of different sizes.
+
+Pair selection: The video is split into ~5 s windows. In each window, every pair of chains is scored on co-detection rate and centroid proximity, and the best pair is taken as the interacting dyad.
+
+A/B labelling: The two animals are labelled A and B by horizontal position in the first window. Labels then carry over between windows using chain identity, which avoids swaps when animals cross. Short gaps are filled by linear interpolation of box coordinates.
+
 
 A and B are consistent within a video. They do not identify specific individuals across videos.
 
 ### 3. Keypoint assignment and smoothing
 
-Assignment to A and B. Pose estimation can label the same animal differently from frame to frame. To fix this, each animal's keypoints are assigned to box A or B by how many fall inside each box, falling back to the nearest box centroid. If two keypoint sets claim the same box, the one with higher mean likelihood wins.
-Gap filling. Short gaps (≤ 10 frames) are linearly interpolated. Interpolated points keep a likelihood of 0, so later stages know they are estimates.
-Smoothing. A per-keypoint constant-velocity Kalman filter smooths each trajectory. Its measurement noise scales inversely with the pose-estimation likelihood, so confident detections pull the estimate more strongly.
+Assignment to A and B: Pose estimation can label the same animal differently from frame to frame. To fix this, each animal's keypoints are assigned to box A or B by how many fall inside each box, falling back to the nearest box centroid. If two keypoint sets claim the same box, the one with higher mean likelihood wins.
+
+Gap filling: Short gaps (≤ 10 frames) are linearly interpolated. Interpolated points keep a likelihood of 0, so later stages know they are estimates.
+
+Smoothing: A per-keypoint constant-velocity Kalman filter smooths each trajectory. Its measurement noise scales inversely with the pose-estimation likelihood, so confident detections pull the estimate more strongly.
 
 ### 4. Training labels
 
@@ -94,7 +111,7 @@ The direction-specific paw-to-body features (A→B vs B→A) are what let the cl
 
 ### 6. Classification
 
-Model. A Random Forest (1,000 trees, balanced class weights, min_samples_leaf=20) inside a scikit-learn Pipeline with median imputation.
+Model: A Random Forest (1,000 trees, balanced class weights, min_samples_leaf=20) inside a scikit-learn Pipeline with median imputation.
 
 Validation: Group K-fold cross-validation grouped by video, so frames from one video never appear in both train and test folds. Because neighbouring frames are highly correlated, this avoids the inflated scores a random frame-level split would give. Imputation is fitted within each fold to prevent leakage.
 
@@ -109,6 +126,7 @@ Direction smoothing: a rolling mean of each direction's probability over 10 fram
 Thresholding: a frame counts as grooming if P(grooming) > 0.6.
 
 Short-bout removal: bouts under 1 s are dropped.
+
 
 Gap merging:
 
@@ -143,20 +161,30 @@ The final outputs are per-frame class probabilities and per-video bout predictio
 
 ## Requirements
 Python 3.10+ (developed on 3.13)
+
 A CUDA GPU is recommended for YOLO training and inference
+
 DeepLabCut with the pretrained SuperAnimal model, for pose estimation. Run it separately; this pipeline reads its .h5 output.
 bash
+
 pip install ultralytics supervision opencv-python pandas numpy scikit-learn matplotlib pyyaml tables
-Inputs
-Input	Format
-Videos	.mp4, 960×540, 25 fps
-Pose estimation	Multi-animal DeepLabCut SuperAnimal .h5, one per video (filenames contain _superanimal), with the keypoints nose, mouth_end_left/right, left/right_earbase, neck_base, back_middle, tail_base, front_left/right_paw
-Annotations (training only)	CSV with one row per video and columns bout_{i}_start, bout_{i}_end, bout_{i}_gr, bout_{i}_rec (groomer and recipient as A/B)
-Usage
+
+
+Inputs:
+
+
+Videos: .mp4, 960×540, 25 fps
+
+Pose estimation: Multi-animal DeepLabCut SuperAnimal .h5, one per video (filenames contain _superanimal), with the keypoints nose, mouth_end_left/right, left/right_earbase, neck_base, back_middle, tail_base, front_left/right_paw
+
+Annotations (training only): CSV with one row per video and columns bout_{i}_start, bout_{i}_end, bout_{i}_gr, bout_{i}_rec (groomer and recipient as A/B)
+
+## Usage
 
 The notebook runs top to bottom in two phases:
 
 Training (sections 1–7): train the detector, build A/B tracks for the annotated videos, extract features, train and cross-validate the classifier, then tune the post-processing.
+
 Inference (sections 8–12): run tracking, assignment, quality control, feature extraction and classification on the full video set.
 
 Set the folder paths in each section's settings cell before running.
@@ -164,14 +192,12 @@ Set the folder paths in each section's settings cell before running.
 ## Outputs
 
 *_boxes.csv: per-frame A/B bounding boxes
+
 *_cleaned.csv: per-frame A/B keypoints after assignment and smoothing
+
 all_frame_predictions.csv: per-frame class probabilities
+
 all_bout_predictions.csv: predicted bouts with timing, direction and confidence
-Limitations
-Two animals only. Identity assignment assumes one interacting pair in view, chosen by proximity and co-detection. Groups with several animals in close contact can cause identity swaps.
-No identity across videos. A and B are positional labels within a video, not individual identities.
-Fixed recording settings. Thresholds (box size, pixel distances, gap lengths) are tuned to 960×540 footage at 25 fps and would need adjusting for other setups.
-Domain-specific post-processing. The bout rules encode assumptions about typical bout structure and should be re-tuned for other behaviours or species.
 
 ## Acknowledgements
 - DeepLabCut and the SuperAnimal pretrained models (Ye et al., 2024, Nature Communications): pose estimation
